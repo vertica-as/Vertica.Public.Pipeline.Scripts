@@ -1,0 +1,10 @@
+#   Windows-Path: %XDG_CONFIG_HOME%\pnpm\config.yaml
+#   macOS-Path: ~/.config/pnpm/config.yaml
+#   Linux-Path: ~/.config/pnpm/config.yaml
+#   Windows-Path: %LOCALAPPDATA%\pnpm\config\config.yaml
+#   Windows-Path: %XDG_CONFIG_HOME%\pnpm\rc
+#   macOS-Path: ~/Library/Preferences/pnpm/rc
+#   Linux-Path: ~/.config/pnpm/rc
+#   Windows-Path: %LOCALAPPDATA%\pnpm\config\rc
+minimumReleaseAge: 10080
+ignoreScripts: true

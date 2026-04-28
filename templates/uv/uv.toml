@@ -1,0 +1,8 @@
+#   macOS-Path: ~/.config/uv/uv.toml
+#   Linux-Path: ~/.config/uv/uv.toml
+#   Windows-Path: %APPDATA%\uv\uv.toml
+#   macOS-Path: /etc/uv/uv.toml
+#   Linux-Path: /etc/uv/uv.toml
+#   Windows-Path: %PROGRAMDATA%\uv\uv.toml
+exclude-newer = "7 days"
+no-build = true

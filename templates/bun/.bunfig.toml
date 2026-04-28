@@ -1,0 +1,8 @@
+#   Windows-Path: %XDG_CONFIG_HOME%\.bunfig.toml
+#   macOS-Path: $HOME/.bunfig.toml
+#   Linux-Path: $HOME/.bunfig.toml
+#   Windows-Path: %USERPROFILE%\.bunfig.toml
+
+[install]
+minimumReleaseAge = 604800
+ignoreScripts = true
