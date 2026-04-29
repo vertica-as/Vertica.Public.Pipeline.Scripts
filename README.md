@@ -63,7 +63,7 @@ Some targets may require elevation:
 - `%PROGRAMDATA%\uv\uv.toml`
 - other machine-level config paths, depending on how the package manager was installed and which directories are writable on that workstation
 
-If a `Windows-Path` marker depends on an environment variable that is not set, the script skips that target instead of writing to a literal unresolved path.
+If a `Windows-Path` marker depends on an environment variable that is not set, the script skips that target instead of writing to a literal unresolved path. Those optional skipped targets stay quiet during normal runs and only appear with verbose output.
 
 ## How It Works
 

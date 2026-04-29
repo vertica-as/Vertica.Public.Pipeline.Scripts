@@ -878,7 +878,7 @@ try {
             $destinationPath = Expand-TargetPath -PathSpec $targetSpec
 
             if (-not $destinationPath) {
-                Write-Host ("[{0}] SKIPPED: unresolved path marker {1}" -f $templateName, $targetSpec)
+                Write-Verbose ("[{0}] Skipping unresolved path marker {1}" -f $templateName, $targetSpec)
                 continue
             }
 
