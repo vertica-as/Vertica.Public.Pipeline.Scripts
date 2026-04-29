@@ -1,11 +1,21 @@
 [CmdletBinding()]
-param()
+param(
+    [string]$GitHubRepository = 'vertica-as/Vertica.Public.Pipeline.Scripts',
+
+    [string]$GitRef = 'main',
+
+    [switch]$ForceRemoteTemplates,
+
+    [switch]$KeepDownloadedTemplates
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # Repository-local template root and a consistent encoding for any files we write.
-$templatesRoot = Join-Path $PSScriptRoot 'templates'
+$localTemplatesRoot = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'templates' } else { $null }
+$remoteTemplateManifestPath = 'template-files.txt'
+$rawGitHubRoot = 'https://raw.githubusercontent.com'
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
 # Reads the full file exactly as-is so merge operations can preserve formatting.
@@ -39,6 +49,140 @@ function Get-TemplateFiles {
     )
 
     return Get-ChildItem -Path $RootPath -File -Recurse | Sort-Object FullName
+}
+
+# Builds the raw GitHub URL for one repository-relative file path.
+function Get-RemoteFileUrl {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Ref,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RelativePath
+    )
+
+    $normalizedPath = $RelativePath.Replace('\', '/').TrimStart('/')
+    return '{0}/{1}/{2}/{3}' -f $rawGitHubRoot, $Repository, $Ref, $normalizedPath
+}
+
+# Reads the list of template files that should be downloaded when the script runs standalone.
+function Get-RemoteTemplatePaths {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Ref,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ManifestPath
+    )
+
+    $manifestUrl = Get-RemoteFileUrl -Repository $Repository -Ref $Ref -RelativePath $ManifestPath
+
+    try {
+        $manifestContent = (Invoke-WebRequest -Uri $manifestUrl).Content
+    }
+    catch {
+        throw "Failed to download template manifest from $manifestUrl. $($_.Exception.Message)"
+    }
+
+    $templatePaths = New-Object System.Collections.Generic.List[string]
+
+    foreach ($line in ($manifestContent -split '\r?\n')) {
+        $trimmedLine = $line.Trim()
+        if (-not $trimmedLine -or $trimmedLine.StartsWith('#')) {
+            continue
+        }
+
+        if (-not $trimmedLine.StartsWith('templates/')) {
+            throw "Unsupported template manifest entry '$trimmedLine' in $manifestUrl"
+        }
+
+        $templatePaths.Add($trimmedLine)
+    }
+
+    if ($templatePaths.Count -eq 0) {
+        throw "No template paths were found in $manifestUrl"
+    }
+
+    return $templatePaths
+}
+
+# Downloads the manifest-listed template files into a temporary folder so the existing
+# merge logic can keep working with on-disk template files.
+function Initialize-RemoteTemplates {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Ref,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ManifestPath
+    )
+
+    $cacheRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('ssc-global-configs-' + [System.Guid]::NewGuid().ToString())
+    $templatePaths = @(Get-RemoteTemplatePaths -Repository $Repository -Ref $Ref -ManifestPath $ManifestPath)
+
+    foreach ($templatePath in $templatePaths) {
+        $templateUrl = Get-RemoteFileUrl -Repository $Repository -Ref $Ref -RelativePath $templatePath
+        $destinationPath = Join-Path $cacheRoot ($templatePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+
+        try {
+            $templateContent = (Invoke-WebRequest -Uri $templateUrl).Content
+        }
+        catch {
+            throw "Failed to download template $templatePath from $templateUrl. $($_.Exception.Message)"
+        }
+
+        Ensure-ParentDirectory -FilePath $destinationPath
+        [System.IO.File]::WriteAllText($destinationPath, $templateContent, $utf8NoBom)
+    }
+
+    return [pscustomobject]@{
+        TemplatesRoot = Join-Path $cacheRoot 'templates'
+        CacheRoot = $cacheRoot
+    }
+}
+
+# Uses repository-local templates when available, otherwise falls back to downloading
+# the templates from GitHub so the script can run as a standalone raw file.
+function Resolve-TemplateSource {
+    param(
+        [Parameter()]
+        [string]$LocalTemplatesRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Ref,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ManifestPath,
+
+        [switch]$ForceRemote
+    )
+
+    if (-not $ForceRemote -and $LocalTemplatesRoot -and (Test-Path -LiteralPath $LocalTemplatesRoot)) {
+        return [pscustomobject]@{
+            TemplatesRoot = $LocalTemplatesRoot
+            CacheRoot = $null
+            Source = 'local'
+        }
+    }
+
+    $remoteTemplates = Initialize-RemoteTemplates -Repository $Repository -Ref $Ref -ManifestPath $ManifestPath
+    return [pscustomobject]@{
+        TemplatesRoot = $remoteTemplates.TemplatesRoot
+        CacheRoot = $remoteTemplates.CacheRoot
+        Source = 'github'
+    }
 }
 
 # Pulls machine-readable path markers such as Windows-Path, Linux-Path, or macOS-Path.
@@ -703,50 +847,66 @@ function Write-FileIfChanged {
 # 2. Read each template's Windows-Path markers.
 # 3. Merge only the managed settings into each destination config.
 # 4. Write changes if needed and report any failures at the end.
-$templateFiles = @(Get-TemplateFiles -RootPath $templatesRoot)
-if ($templateFiles.Count -eq 0) {
-    throw "No template files were found in $templatesRoot"
-}
+$templateSource = $null
 
-$failures = New-Object System.Collections.Generic.List[string]
+try {
+    $templateSource = Resolve-TemplateSource -LocalTemplatesRoot $localTemplatesRoot -Repository $GitHubRepository -Ref $GitRef -ManifestPath $remoteTemplateManifestPath -ForceRemote:$ForceRemoteTemplates
+    $templatesRoot = $templateSource.TemplatesRoot
 
-foreach ($templateFile in $templateFiles) {
-    $templatePath = $templateFile.FullName
-    $templateName = Split-Path -Leaf $templateFile.DirectoryName
-    $targetSpecs = @(Get-TargetSpecs -TemplatePath $templatePath -Platform 'Windows')
-
-    if ($targetSpecs.Count -eq 0) {
-        Write-Warning ("[{0}] No Windows-Path markers found in {1}" -f $templateName, $templatePath)
-        continue
+    if ($templateSource.Source -eq 'github') {
+        Write-Host ("Using templates downloaded from https://github.com/{0} at ref {1}" -f $GitHubRepository, $GitRef)
     }
 
-    foreach ($targetSpec in $targetSpecs) {
-        $destinationPath = Expand-TargetPath -PathSpec $targetSpec
+    $templateFiles = @(Get-TemplateFiles -RootPath $templatesRoot)
+    if ($templateFiles.Count -eq 0) {
+        throw "No template files were found in $templatesRoot"
+    }
 
-        if (-not $destinationPath) {
-            Write-Host ("[{0}] SKIPPED: unresolved path marker {1}" -f $templateName, $targetSpec)
+    $failures = New-Object System.Collections.Generic.List[string]
+
+    foreach ($templateFile in $templateFiles) {
+        $templatePath = $templateFile.FullName
+        $templateName = Split-Path -Leaf $templateFile.DirectoryName
+        $targetSpecs = @(Get-TargetSpecs -TemplatePath $templatePath -Platform 'Windows')
+
+        if ($targetSpecs.Count -eq 0) {
+            Write-Warning ("[{0}] No Windows-Path markers found in {1}" -f $templateName, $templatePath)
             continue
         }
 
-        try {
-            $mergedContent = Merge-ConfigContent -TemplatePath $templatePath -DestinationPath $destinationPath
-            $result = Write-FileIfChanged -FilePath $destinationPath -Content $mergedContent
-            Write-Host ("[{0}] {1}: {2}" -f $templateName, $result.ToUpperInvariant(), $destinationPath)
-        }
-        catch {
-            $failures.Add("[$templateName] $destinationPath - $($_.Exception.Message)")
-            Write-Warning ("[{0}] FAILED: {1}`n{2}" -f $templateName, $destinationPath, $_.Exception.Message)
+        foreach ($targetSpec in $targetSpecs) {
+            $destinationPath = Expand-TargetPath -PathSpec $targetSpec
+
+            if (-not $destinationPath) {
+                Write-Host ("[{0}] SKIPPED: unresolved path marker {1}" -f $templateName, $targetSpec)
+                continue
+            }
+
+            try {
+                $mergedContent = Merge-ConfigContent -TemplatePath $templatePath -DestinationPath $destinationPath
+                $result = Write-FileIfChanged -FilePath $destinationPath -Content $mergedContent
+                Write-Host ("[{0}] {1}: {2}" -f $templateName, $result.ToUpperInvariant(), $destinationPath)
+            }
+            catch {
+                $failures.Add("[$templateName] $destinationPath - $($_.Exception.Message)")
+                Write-Warning ("[{0}] FAILED: {1}`n{2}" -f $templateName, $destinationPath, $_.Exception.Message)
+            }
         }
     }
+
+    if ($failures.Count -gt 0) {
+        $message = @(
+            'One or more config files could not be written:'
+            $failures
+        ) -join [System.Environment]::NewLine
+
+        throw $message
+    }
+
+    Write-Host 'All Windows config files are in sync with the templates.'
 }
-
-if ($failures.Count -gt 0) {
-    $message = @(
-        'One or more config files could not be written:'
-        $failures
-    ) -join [System.Environment]::NewLine
-
-    throw $message
+finally {
+    if ($templateSource -and $templateSource.CacheRoot -and -not $KeepDownloadedTemplates) {
+        Remove-Item -LiteralPath $templateSource.CacheRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
-
-Write-Host 'All Windows config files are in sync with the templates.'

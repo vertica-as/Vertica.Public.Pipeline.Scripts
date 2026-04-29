@@ -1,0 +1,6 @@
+# Repository-relative template files for standalone GitHub execution.
+templates/bun/.bunfig.toml
+templates/npm/.npmrc
+templates/pnpm/config.yaml
+templates/uv/uv.toml
+templates/yarn/.yarnrc.yml

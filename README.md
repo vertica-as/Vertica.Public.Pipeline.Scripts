@@ -16,6 +16,8 @@ Important repository rule:
 
 `install-windows-configs.ps1` walks the `templates/` directory, discovers each config template automatically, reads the `Windows-Path` markers embedded in the template comments, and writes the managed settings to those destinations.
 
+When the script is run as a standalone downloaded file and no local `templates/` directory is present next to it, it can also download the template files directly from this GitHub repository.
+
 The script is designed to be conservative:
 - It creates missing parent directories.
 - It updates only the keys managed by the template.
@@ -93,6 +95,15 @@ Or:
 pwsh -File .\install-windows-configs.ps1
 ```
 
+Standalone GitHub execution also works:
+
+```powershell
+curl.exe -L "https://raw.githubusercontent.com/vertica-as/Vertica.Public.Pipeline.Scripts/refs/heads/main/install-windows-configs.ps1" -o "$env:TEMP\install-windows-configs.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-windows-configs.ps1"
+```
+
+In that mode, the script downloads the template files listed in `template-files.txt` from the same GitHub repository, applies them, and then removes the temporary downloaded templates.
+
 Typical output looks like this:
 
 ```text
@@ -108,6 +119,7 @@ If a destination cannot be written, the script keeps going and throws a combined
 ```text
 .
 |-- install-windows-configs.ps1
+|-- template-files.txt
 `-- templates/
     |-- bun/
     |-- npm/
