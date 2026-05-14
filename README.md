@@ -98,19 +98,19 @@ dotnet run --project .\SscGlobalConfigs\SscGlobalConfigs.csproj -- --verbose
 Publish a standalone Windows executable:
 
 ```powershell
-dotnet publish .\SscGlobalConfigs\SscGlobalConfigs.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o .\artifacts\win-x64
+dotnet publish .\SscGlobalConfigs\SscGlobalConfigs.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o .\dist\win-x64
 ```
 
 That produces:
 
 ```text
-.\artifacts\win-x64\SscGlobalConfigs.exe
+.\dist\win-x64\SscGlobalConfigs.exe
 ```
 
 Or run the built executable directly:
 
 ```powershell
-.\artifacts\win-x64\SscGlobalConfigs.exe --verbose
+.\dist\win-x64\SscGlobalConfigs.exe --verbose
 ```
 
 Standalone execution also works after publishing a binary and placing it next to `templates\` and `template-files.txt`.
@@ -125,22 +125,14 @@ In that mode, the executable downloads the template files listed in `template-fi
 
 ## Direct GitHub Download
 
-This repository includes a GitHub Actions workflow at `.github/workflows/release-win-x64.yml`.
-
-When a tag like `v1.0.0` is pushed, GitHub Actions publishes a single-file `win-x64` executable and uploads it to the GitHub release as:
-
-```text
-SscGlobalConfigs.exe
-```
-
-After that release exists, users can download and run it directly from GitHub with `curl`:
+If you commit `dist\win-x64\SscGlobalConfigs.exe` to the repository, users can download and run it directly from GitHub with `curl`:
 
 ```powershell
-curl.exe -L "https://github.com/vertica-as/Vertica.Public.Pipeline.Scripts/releases/latest/download/SscGlobalConfigs.exe" -o "$env:TEMP\SscGlobalConfigs.exe"
+curl.exe -L "https://raw.githubusercontent.com/vertica-as/Vertica.Public.Pipeline.Scripts/main/dist/win-x64/SscGlobalConfigs.exe" -o "$env:TEMP\SscGlobalConfigs.exe"
 & "$env:TEMP\SscGlobalConfigs.exe" --force-remote-templates --verbose
 ```
 
-That flow downloads only the executable. The executable then downloads `template-files.txt` and the templates from GitHub at runtime.
+That flow downloads only the executable from the repository. The executable then downloads `template-files.txt` and the templates from GitHub at runtime.
 
 Useful options:
 
