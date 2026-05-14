@@ -1,0 +1,32 @@
+name: Release Windows Executable
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish-win-x64:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish win-x64 single-file executable
+        shell: pwsh
+        run: |
+          dotnet publish .\SscGlobalConfigs\SscGlobalConfigs.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o .\artifacts\win-x64
+
+      - name: Upload executable to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: .\artifacts\win-x64\SscGlobalConfigs.exe

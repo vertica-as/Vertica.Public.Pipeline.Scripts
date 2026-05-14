@@ -1,6 +1,6 @@
 # SSC Global Configs
 
-Template-driven global package manager configuration for Windows.
+Template-driven global package manager configuration with a .NET sync executable.
 
 This repository keeps a small set of opinionated default configs for multiple package managers in one place, then syncs those settings into the correct per-user or machine-wide config files on a Windows machine.
 
@@ -10,15 +10,15 @@ Current focus:
 - Safe merging of managed settings into existing config files
 
 Important repository rule:
-- keep the Linux and macOS path markers in templates, even though the current script only syncs Windows targets
+- keep the Linux and macOS path markers in templates, even though the current executable only syncs Windows targets
 
 ## What This Repository Does
 
-`install-windows-configs.ps1` walks the `templates/` directory, discovers each config template automatically, reads the `Windows-Path` markers embedded in the template comments, and writes the managed settings to those destinations.
+`SscGlobalConfigs` walks the `templates/` directory, discovers each config template automatically, reads the `Windows-Path` markers embedded in the template comments, and writes the managed settings to those destinations.
 
-When the script is run as a standalone downloaded file and no local `templates/` directory is present next to it, it can also download the template files directly from this GitHub repository.
+When the executable is run standalone and no local `templates/` directory is present next to it, it can also download the template files directly from this GitHub repository.
 
-The script is designed to be conservative:
+The executable is designed to be conservative:
 - It creates missing parent directories.
 - It updates only the keys managed by the template.
 - It preserves unrelated user settings whenever possible.
@@ -63,11 +63,11 @@ Some targets may require elevation:
 - `%PROGRAMDATA%\uv\uv.toml`
 - other machine-level config paths, depending on how the package manager was installed and which directories are writable on that workstation
 
-If a `Windows-Path` marker depends on an environment variable that is not set, the script skips that target instead of writing to a literal unresolved path. Those optional skipped targets stay quiet during normal runs and only appear with verbose output.
+If a `Windows-Path` marker depends on an environment variable that is not set, the executable skips that target instead of writing to a literal unresolved path. Those optional skipped targets stay quiet during normal runs and only appear with verbose output.
 
 ## How It Works
 
-The script supports three config shapes:
+The executable supports three config shapes:
 - INI-style key/value files such as `.npmrc` and legacy `pnpm` `rc`
 - top-level YAML key/value files such as `pnpm` `config.yaml` and `.yarnrc.yml`
 - TOML files such as `.bunfig.toml` and `uv.toml`
@@ -79,30 +79,78 @@ High-level flow:
 4. Merge template-managed settings into the destination config.
 5. Write the result only if it changed.
 
-The current script only reads `Windows-Path` entries.
+The current executable only reads `Windows-Path` entries.
 
 ## Usage
 
-Run from the repository root in Windows PowerShell or PowerShell 7:
+Build from the repository root:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install-windows-configs.ps1
+dotnet build .\SscGlobalConfigs\SscGlobalConfigs.csproj
 ```
 
-Or:
+Run from source:
 
 ```powershell
-pwsh -File .\install-windows-configs.ps1
+dotnet run --project .\SscGlobalConfigs\SscGlobalConfigs.csproj -- --verbose
 ```
 
-Standalone GitHub execution also works:
+Publish a standalone Windows executable:
 
 ```powershell
-curl.exe -L "https://raw.githubusercontent.com/vertica-as/Vertica.Public.Pipeline.Scripts/refs/heads/main/install-windows-configs.ps1" -o "$env:TEMP\install-windows-configs.ps1"
-powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-windows-configs.ps1"
+dotnet publish .\SscGlobalConfigs\SscGlobalConfigs.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o .\artifacts\win-x64
 ```
 
-In that mode, the script downloads the template files listed in `template-files.txt` from the same GitHub repository, applies them, and then removes the temporary downloaded templates.
+That produces:
+
+```text
+.\artifacts\win-x64\SscGlobalConfigs.exe
+```
+
+Or run the built executable directly:
+
+```powershell
+.\artifacts\win-x64\SscGlobalConfigs.exe --verbose
+```
+
+Standalone execution also works after publishing a binary and placing it next to `templates\` and `template-files.txt`.
+
+If no local `templates\` directory exists next to the executable, you can force standalone GitHub template download mode:
+
+```powershell
+SscGlobalConfigs.exe --force-remote-templates --verbose
+```
+
+In that mode, the executable downloads the template files listed in `template-files.txt` from the same GitHub repository, applies them, and then removes the temporary downloaded templates.
+
+## Direct GitHub Download
+
+This repository includes a GitHub Actions workflow at `.github/workflows/release-win-x64.yml`.
+
+When a tag like `v1.0.0` is pushed, GitHub Actions publishes a single-file `win-x64` executable and uploads it to the GitHub release as:
+
+```text
+SscGlobalConfigs.exe
+```
+
+After that release exists, users can download and run it directly from GitHub with `curl`:
+
+```powershell
+curl.exe -L "https://github.com/vertica-as/Vertica.Public.Pipeline.Scripts/releases/latest/download/SscGlobalConfigs.exe" -o "$env:TEMP\SscGlobalConfigs.exe"
+& "$env:TEMP\SscGlobalConfigs.exe" --force-remote-templates --verbose
+```
+
+That flow downloads only the executable. The executable then downloads `template-files.txt` and the templates from GitHub at runtime.
+
+Useful options:
+
+```text
+--github-repository <owner/repo>
+--git-ref <ref>
+--force-remote-templates
+--keep-downloaded-templates
+--verbose
+```
 
 Typical output looks like this:
 
@@ -112,13 +160,13 @@ Typical output looks like this:
 All Windows config files are in sync with the templates.
 ```
 
-If a destination cannot be written, the script keeps going and throws a combined error at the end.
+If a destination cannot be written, the executable keeps going and throws a combined error at the end.
 
 ## Repository Layout
 
 ```text
 .
-|-- install-windows-configs.ps1
+|-- SscGlobalConfigs/
 |-- template-files.txt
 `-- templates/
     |-- bun/
@@ -128,7 +176,7 @@ If a destination cannot be written, the script keeps going and throws a combined
     `-- yarn/
 ```
 
-Each template file contains only the machine-readable path markers the script parses, using the format `<Platform>-Path: <path>`.
+Each template file contains only the machine-readable path markers the executable parses, using the format `<Platform>-Path: <path>`.
 
 Examples:
 - `Windows-Path: %USERPROFILE%\.npmrc`
@@ -139,12 +187,12 @@ Examples:
 
 When adding or changing a template:
 - Keep path markers in comments using the exact format `<Platform>-Path: <path>`.
-- Use `Windows-Path` for any path the current script should manage.
+- Use `Windows-Path` for any path the current executable should manage.
 - Keep YAML templates flat unless the merge logic is extended.
 - Prefer a minimal set of managed settings.
-- Avoid extra human-readable comments unless the script needs them.
+- Avoid extra human-readable comments unless the executable needs them.
 
-In most cases, adding a new package manager should only require a new template file. The script already discovers templates automatically.
+In most cases, adding a new package manager should only require a new template file. The executable already discovers templates automatically.
 
 ## Current Constraints
 
@@ -174,7 +222,7 @@ When contributing:
 - avoid hardcoding template lists when template discovery already works
 - keep documentation aligned with actual script behavior
 - do not claim cross-platform support until the automation exists
-- do not delete Linux or macOS path markers from templates just because the current script is Windows-only
+- do not delete Linux or macOS path markers from templates just because the current executable is Windows-only
 
 ## AI Contributor Notes
 
